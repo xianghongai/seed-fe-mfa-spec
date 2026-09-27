@@ -1,0 +1,54 @@
+# Changesets flow: pushes to main with pending changesets open or update a version PR;
+# merging that PR publishes the changed packages to npm, tags the release and creates a GitHub release.
+# `pnpm run release` runs `changeset publish`, whose `prepack` runs the type check, lint, tests and build.
+# Publishing authenticates through npm trusted publishing (OIDC): each package on npmjs.com must list
+# this repository and workflow as a trusted publisher; no npm token is stored.
+on:
+  push:
+    branches:
+      - main
+
+name: Release
+run-name: 'Release npm: ${{ github.ref_name }}'
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write # version PR, tags, GitHub releases
+  pull-requests: write # version PR
+  id-token: write # npm trusted publishing and provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Changesets reads the history to tell what changed since the last release.
+          fetch-depth: 0
+
+      # No dependency cache on purpose: this job publishes with provenance, so install from the registry.
+      - name: Setup mise (Node.js + pnpm)
+        uses: jdx/mise-action@v4
+        with:
+          cache: false
+
+      # Trusted publishing needs npm >= 11.5.1; npm 12 changes `npm info --json`, which Changesets relies on.
+      - name: Use npm 11
+        run: npm install -g npm@11
+
+      - name: Install the dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Create the version PR or publish
+        uses: changesets/action@v2
+        with:
+          publish-script: pnpm run release
+          commit-message: 'chore(release): version packages'
+          pr-title: 'chore(release): version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # pnpm does not turn provenance on by itself under trusted publishing.
+          NPM_CONFIG_PROVENANCE: 'true'

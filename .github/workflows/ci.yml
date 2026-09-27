@@ -1,0 +1,44 @@
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+
+  workflow_dispatch:
+
+name: CI
+run-name: 'CI Check: ${{ github.head_ref || github.ref_name }}'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup mise (Node.js + pnpm)
+        uses: jdx/mise-action@v4
+
+      - name: Install the dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Format
+        run: pnpm run format:check
+
+      - name: Lint
+        run: pnpm run lint
+
+      # Builds the packages first, so dependents are checked against the published types.
+      - name: Type check
+        run: pnpm run check-types
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Build the site
+        run: pnpm run --if-present site:build
